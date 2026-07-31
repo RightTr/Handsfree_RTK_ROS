@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>handsfree_rtk</name>
+  <version>0.0.0</version>
+
+  <description>
+    ROS2 package manifest for handsfree_rtk.
+  </description>
+
+  <maintainer email="handsfree@todo.todo">handsfree</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>sensor_msgs</depend>
+  <depend>std_msgs</depend>
+  <depend>rclpy</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

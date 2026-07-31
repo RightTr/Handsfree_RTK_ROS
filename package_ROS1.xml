@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<package>
+  <name>handsfree_rtk</name>
+  <version>0.0.0</version>
+
+  <description>
+    ROS1 package manifest for handsfree_rtk.
+  </description>
+
+  <maintainer email="handsfree@todo.todo">handsfree</maintainer>
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>rospy</build_depend>
+  <build_depend>sensor_msgs</build_depend>
+  <build_depend>std_msgs</build_depend>
+
+  <run_depend>rospy</run_depend>
+  <run_depend>sensor_msgs</run_depend>
+  <run_depend>std_msgs</run_depend>
+
+  <test_depend>rostest</test_depend>
+  <test_depend>rosbag</test_depend>
+
+  <export>
+  </export>
+</package>
