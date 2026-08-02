@@ -47,6 +47,10 @@
 using boost::asio::ip::tcp;
 namespace asio = boost::asio;
 
+#ifndef ROS_EDITION
+#define ROS_EDITION "Standalone"
+#endif
+
 // ---------- ANSI (toggle by --no-color) ----------
 static bool ANSI_ENABLE =
 #if defined(_WIN32)
@@ -627,6 +631,7 @@ int main(int argc, char** argv){
 #endif
     Args a = parse_args(argc, argv);
     try{
+        log_info(std::string("Build mode: ") + ROS_EDITION);
         App app(a);
         app.run();
     }catch(const std::exception& e){

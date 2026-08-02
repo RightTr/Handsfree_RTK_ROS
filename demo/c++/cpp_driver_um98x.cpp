@@ -48,6 +48,10 @@ using io_t = boost::asio::io_service;
 using boost::asio::ip::tcp;
 namespace asio = boost::asio;
 
+#ifndef ROS_EDITION
+#define ROS_EDITION "Standalone"
+#endif
+
 // ---------------------------
 // 简单日志（含UTC时间）
 // ---------------------------
@@ -579,6 +583,7 @@ int main(int argc, char** argv) {
     std::signal(SIGTERM, sigint_handler);
 #endif
 
+    log_line("INFO", std::string("Build mode: ") + ROS_EDITION);
     SerialNMEAReader reader(opt.port, opt.baud, opt.timeout, !opt.no_raw);
     g_reader = &reader;
 

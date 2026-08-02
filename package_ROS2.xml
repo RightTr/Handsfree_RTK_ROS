@@ -12,9 +12,11 @@
 
   <buildtool_depend>ament_cmake</buildtool_depend>
 
+  <depend>rclcpp</depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <depend>sensor_msgs</depend>
   <depend>std_msgs</depend>
-  <depend>rclpy</depend>
 
   <export>
     <build_type>ament_cmake</build_type>
