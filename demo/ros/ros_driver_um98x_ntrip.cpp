@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
@@ -15,6 +16,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <ctime>
 #include <vector>
 
 #include <boost/asio.hpp>
@@ -54,6 +56,21 @@ namespace asio = boost::asio;
 using boost::asio::ip::tcp;
 
 namespace {
+
+struct UtcDate {
+  int year = 1970;
+  int month = 1;
+  int day = 1;
+  bool valid = false;
+};
+
+struct UtcTimeOfDay {
+  int hour = 0;
+  int minute = 0;
+  int second = 0;
+  uint32_t nanosecond = 0;
+  bool valid = false;
+};
 
 static std::vector<std::string> split_csv(const std::string& line) {
   std::vector<std::string> out;
@@ -102,6 +119,73 @@ static int to_int(const std::string& s, int fallback) {
   }
 }
 
+static int64_t days_from_civil(int y, unsigned m, unsigned d) {
+  y -= m <= 2;
+  const int era = (y >= 0 ? y : y - 399) / 400;
+  const unsigned yoe = static_cast<unsigned>(y - era * 400);
+  const unsigned doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+  const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+  return era * 146097LL + static_cast<int64_t>(doe) - 719468LL;
+}
+
+static UtcDate current_utc_date() {
+  std::time_t now = std::time(nullptr);
+  std::tm tm_utc;
+#if defined(_WIN32)
+  gmtime_s(&tm_utc, &now);
+#else
+  gmtime_r(&now, &tm_utc);
+#endif
+  UtcDate date;
+  date.year = tm_utc.tm_year + 1900;
+  date.month = tm_utc.tm_mon + 1;
+  date.day = tm_utc.tm_mday;
+  date.valid = true;
+  return date;
+}
+
+static UtcTimeOfDay parse_nmea_utc_time(const std::string& hhmmss) {
+  UtcTimeOfDay out;
+  try {
+    if (hhmmss.size() < 6) {
+      return out;
+    }
+    out.hour = std::stoi(hhmmss.substr(0, 2));
+    out.minute = std::stoi(hhmmss.substr(2, 2));
+    const double seconds = std::stod(hhmmss.substr(4));
+    out.second = static_cast<int>(seconds);
+    out.nanosecond = static_cast<uint32_t>((seconds - out.second) * 1000000000.0);
+    out.valid = out.hour >= 0 && out.hour < 24 &&
+                out.minute >= 0 && out.minute < 60 &&
+                out.second >= 0 && out.second < 60;
+  } catch (...) {
+    out.valid = false;
+  }
+  return out;
+}
+
+static UtcDate parse_nmea_date(const std::string& ddmmyy) {
+  UtcDate out;
+  try {
+    if (ddmmyy.size() != 6) {
+      return out;
+    }
+    out.day = std::stoi(ddmmyy.substr(0, 2));
+    out.month = std::stoi(ddmmyy.substr(2, 2));
+    int yy = std::stoi(ddmmyy.substr(4, 2));
+    out.year = yy >= 80 ? 1900 + yy : 2000 + yy;
+    out.valid = out.month >= 1 && out.month <= 12 && out.day >= 1 && out.day <= 31;
+  } catch (...) {
+    out.valid = false;
+  }
+  return out;
+}
+
+static int64_t utc_epoch_seconds(const UtcDate& date, const UtcTimeOfDay& time) {
+  return days_from_civil(date.year, static_cast<unsigned>(date.month), static_cast<unsigned>(date.day)) * 86400LL +
+         time.hour * 3600 + time.minute * 60 + time.second;
+}
+
 static double ddmm_to_deg(const std::string& value, const std::string& dir, bool is_lat) {
   try {
     if (value.empty()) {
@@ -125,6 +209,7 @@ static double ddmm_to_deg(const std::string& value, const std::string& dir, bool
 
 struct GgaData {
   bool valid = false;
+  UtcTimeOfDay utc_time;
   int fix_quality = 0;
   int num_sats = 0;
   double hdop = 99.9;
@@ -136,6 +221,7 @@ struct GgaData {
 struct RmcData {
   bool valid = false;
   bool status_valid = false;
+  UtcDate utc_date;
   double speed_knots = 0.0;
   double speed_mps = 0.0;
   double cog_deg = 0.0;
@@ -157,6 +243,7 @@ static bool parse_gga(const std::string& line, GgaData& out) {
   if (fields.size() < 10) {
     return false;
   }
+  out.utc_time = parse_nmea_utc_time(fields[1]);
   out.fix_quality = to_int(fields[6], 0);
   out.num_sats = to_int(fields[7], 0);
   out.hdop = to_double(fields[8], 99.9);
@@ -180,6 +267,7 @@ static bool parse_rmc(const std::string& line, RmcData& out) {
   }
   char status = fields[2].empty() ? 'V' : fields[2][0];
   out.status_valid = (status == 'A');
+  out.utc_date = parse_nmea_date(fields[9]);
   out.speed_knots = to_double(fields[7], 0.0);
   out.speed_mps = out.speed_knots * 0.514444;
   out.cog_deg = to_double(fields[8], 0.0);
@@ -470,14 +558,25 @@ private:
 #endif
   }
 
-  void publish_navsat(double lat, double lon, double alt, int fix_q) {
+  void publish_navsat(double lat, double lon, double alt, int fix_q, const UtcTimeOfDay& utc_time) {
     MsgNavSatFix msg;
+    UtcDate stamp_date = latest_utc_date_.valid ? latest_utc_date_ : current_utc_date();
+    const int64_t stamp_sec = utc_time.valid ? utc_epoch_seconds(stamp_date, utc_time) : 0;
 #if defined(USE_ROS2)
-    auto now = this->now();
-    msg.header.stamp.sec = static_cast<int32_t>(now.nanoseconds() / 1000000000LL);
-    msg.header.stamp.nanosec = static_cast<uint32_t>(now.nanoseconds() % 1000000000LL);
+    if (utc_time.valid) {
+      msg.header.stamp.sec = static_cast<int32_t>(stamp_sec);
+      msg.header.stamp.nanosec = utc_time.nanosecond;
+    } else {
+      auto now = this->now();
+      msg.header.stamp.sec = static_cast<int32_t>(now.nanoseconds() / 1000000000LL);
+      msg.header.stamp.nanosec = static_cast<uint32_t>(now.nanoseconds() % 1000000000LL);
+    }
 #else
-    msg.header.stamp = ros::Time::now();
+    if (utc_time.valid) {
+      msg.header.stamp = ros::Time(static_cast<uint32_t>(stamp_sec), utc_time.nanosecond);
+    } else {
+      msg.header.stamp = ros::Time::now();
+    }
 #endif
     msg.header.frame_id = frame_id_;
     msg.status.status = nav_status_from_fix(fix_q);
@@ -535,12 +634,15 @@ private:
         latest_gga_ = line;
         have_gga_ = true;
       }
-      publish_navsat(gga.lat, gga.lon, gga.alt, gga.fix_quality);
+      publish_navsat(gga.lat, gga.lon, gga.alt, gga.fix_quality, gga.utc_time);
       return;
     }
 
     RmcData rmc;
     if (parse_rmc(line, rmc) && rmc.valid) {
+      if (rmc.utc_date.valid) {
+        latest_utc_date_ = rmc.utc_date;
+      }
       if (rmc.status_valid) {
         publish_float("speed", rmc.speed_mps);
         publish_float("cog", rmc.cog_deg);
@@ -694,6 +796,7 @@ private:
 
   std::mutex mu_;
   std::string latest_gga_;
+  UtcDate latest_utc_date_;
   bool have_gga_ = false;
   std::thread gga_thread_;
   std::thread rtcm_thread_;
