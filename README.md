@@ -30,34 +30,38 @@ bash auto_install.sh
 ```
 
 ## 2. 使用  
-可使用如下指令将 handsfree_rtk 的 ros 设置到.bashrc文件中，便于后期使用，“~/catkin_ws/”是工作空间，用户请根据实际情况修改。  
+当前 C++ ROS 驱动支持 ROS1/ROS2。
 
 ```bash
-echo "source ~/catkin_ws/devel/setup.bash" >> ~/.bashrc
+cd ~/rtk_ws
+colcon build --packages-select handsfree_rtk
+source install/setup.bash
 ```
 
 ### 2.1 handsfree_rtk.launch  
 
 - **功能**：  
    RTK模块驱动程序，解析GNGGA、GNRMC数据。  
-- **串口名称**：  
+- **串口名称**：
    `/dev/HFRobotRTK`（可通过`~port`参数修改）  
 - **发布话题**:
   - `handsfree/rtk/raw` ([std_msgs/String](http://docs.ros.org/en/api/std_msgs/html/msg/String.html))，原始NMEA协议数据
-  - `handsfree/rtk/gnss` ([sensor_msgs/NavSatFix](http://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html))，解析后的GNSS定位数据（包含定位状态、经纬度、海拔、协方差矩阵）
-  - `handsfree/rtk/speed` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html))，解析后的地速数据，单位 m/s
-  - `handsfree/rtk/cog` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html))，解析后的地面航向数据（COG，表示设备运动方向，相对于正北顺时针旋转的角度，0°=正北，90°=正东，180°=正南，270°=正西），单位 °
-  - `handsfree/rtk/heading` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html))，解析后的真航向数据（Heading，表示设备姿态方向，通常为双天线基线方向，独立于运动方向），单位 °
+  - `handsfree/rtk/gnss` (`sensor_msgs/NavSatFix`)，解析后的 GNSS 定位数据；协方差为根据 `fix_quality` 生成的对角协方差
+  - `handsfree/rtk/speed` (`std_msgs/Float64`)，速度，单位 m/s
+  - `handsfree/rtk/cog` (`std_msgs/Float64`)，地面航向，单位 °
+  - `handsfree/rtk/heading` (`nav_msgs/Odometry`)，双天线航向用 `pose.pose.orientation` 四元数表示，`header.stamp` 使用对应 GGA 的 GNSS UTC 时间
 - **启动命令**：  
 
    ```bash
-   roslaunch handsfree_rtk handsfree_rtk.launch
+   ros2 launch handsfree_rtk handsfree_rtk.launch.py
    ```
 
 ### 2.2 handsfree_rtk_ntrip.launch  
 
 - **功能**：  
    NTRIP客户端驱动，实现基站-移动站差分数据传输。自动将移动站的GGA数据上传至NTRIP服务器，并将接收的RTCM差分数据发送给移动站。
+- **与 `handsfree_rtk.launch.py` 的区别**：
+   普通 launch 只读取接收机输出；NTRIP launch 还会连接 NTRIP 服务器、上传 GGA，并向接收机发送 RTCM 差分数据，适合获取 RTK Fixed/Float 定位。
 - **串口名称**：  
    `/dev/HFRobotRTK`（可通过`~port`参数修改）
 - **接收/发送**：  
@@ -66,13 +70,13 @@ echo "source ~/catkin_ws/devel/setup.bash" >> ~/.bashrc
   - 从NTRIP服务器接收：RTCM3.x差分数据流  
 - **发布话题**:
   - `handsfree/rtk/raw` ([std_msgs/String](http://docs.ros.org/en/api/std_msgs/html/msg/String.html))，原始NMEA协议数据
-  - `handsfree/rtk/gnss` ([sensor_msgs/NavSatFix](http://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html))，解析后的GNSS定位数据（包含定位状态、经纬度、海拔、协方差矩阵）
-  - `handsfree/rtk/speed` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html))，解析后的地速数据，单位 m/s
-  - `handsfree/rtk/cog` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html))，解析后的地面航向数据（COG，表示设备运动方向，相对于正北顺时针旋转的角度，0°=正北，90°=正东，180°=正南，270°=正西），单位 °
-  - `handsfree/rtk/heading` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html))，解析后的真航向数据（Heading，表示设备姿态方向，通常为双天线基线方向，独立于运动方向），单位 ° 
+  - `handsfree/rtk/gnss` (`sensor_msgs/NavSatFix`)，解析后的 GNSS 定位数据；协方差为根据 `fix_quality` 生成的对角协方差
+  - `handsfree/rtk/speed` (`std_msgs/Float64`)，速度，单位 m/s
+  - `handsfree/rtk/cog` (`std_msgs/Float64`)，地面航向，单位 °
+  - `handsfree/rtk/heading` (`nav_msgs/Odometry`)，双天线航向用 `pose.pose.orientation` 四元数表示，`header.stamp` 使用对应 GGA 的 GNSS UTC 时间
 - **启动命令**：  
    ```bash
-   roslaunch handsfree_rtk handsfree_rtk_ntrip.launch
+   ros2 launch handsfree_rtk handsfree_rtk_ntrip.launch.py
    ```
 - **关键参数**：  
   ```xml

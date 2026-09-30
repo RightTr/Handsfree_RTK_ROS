@@ -27,6 +27,7 @@ if(USE_ROS1)
   find_package(catkin REQUIRED COMPONENTS
     roscpp
     rospy
+    nav_msgs
     sensor_msgs
     std_msgs
   )
@@ -36,6 +37,7 @@ endif()
 
 if(USE_ROS2)
   find_package(ament_cmake REQUIRED)
+  find_package(nav_msgs REQUIRED)
   find_package(rclcpp REQUIRED)
   find_package(sensor_msgs REQUIRED)
   find_package(std_msgs REQUIRED)
@@ -54,6 +56,7 @@ function(configure_cpp_demo target source_file)
     target_compile_definitions(${target} PRIVATE USE_ROS2 ROS_EDITION=\"ROS2\")
     ament_target_dependencies(${target}
       rclcpp
+      nav_msgs
       sensor_msgs
       std_msgs
     )

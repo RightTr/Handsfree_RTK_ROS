@@ -14,11 +14,13 @@ NMEA RTK 串口读取节点（类封装版）
 import sys
 import re
 import time
+import math
 import threading
 import serial
 import rospy
 from std_msgs.msg import String, Float64
 from sensor_msgs.msg import NavSatFix, NavSatStatus
+from nav_msgs.msg import Odometry
 
 # ---------------------------
 # 定位状态映射（UM982/通用风格）
@@ -67,7 +69,8 @@ class RTKTagDriver(object):
         self.gnss_pub = rospy.Publisher("handsfree/rtk/gnss", NavSatFix, queue_size=10)
         self.speed_pub = rospy.Publisher("handsfree/rtk/speed", Float64, queue_size=10)   # m/s
         self.cog_pub = rospy.Publisher("handsfree/rtk/cog", Float64, queue_size=10)       # deg (Course over ground)
-        self.heading_pub = rospy.Publisher("handsfree/rtk/heading", Float64, queue_size=10)  # deg (True heading)
+        self.heading_pub = rospy.Publisher("handsfree/rtk/heading", Odometry, queue_size=10)  # quaternion, header.stamp: GNSS UTC
+        self.heading_utc_time = None
 
 
         # 控制线程的事件与句柄
@@ -159,6 +162,7 @@ class RTKTagDriver(object):
 
                 # 处理 GGA（位置/状态）
                 if parsed['type'] == 'GNGGA':
+                    self.heading_utc_time = parsed['time']
                     lat = parsed.get('latitude')
                     lon = parsed.get('longitude')
                     alt = parsed.get('altitude')
@@ -208,8 +212,16 @@ class RTKTagDriver(object):
                     valid = parsed.get('valid', False)
                     if heading is not None:
                         rospy.loginfo("THS: heading=%.3f° (%s)", heading, "valid" if valid else "invalid")
-                        if valid:
-                            self.heading_pub.publish(Float64(data=heading))
+                        if valid and self.heading_utc_time is not None:
+                            msg = Odometry()
+                            msg.header.stamp = self.heading_utc_time
+                            msg.header.frame_id = "gps"
+                            msg.child_frame_id = "heading"
+                            heading_rad = heading * 3.141592653589793 / 180.0
+                            msg.pose.pose.orientation.z = math.sin(heading_rad * 0.5)
+                            msg.pose.pose.orientation.w = math.cos(heading_rad * 0.5)
+                            self.heading_pub.publish(msg)
+                            self.heading_utc_time = None
 
             except serial.SerialException as e:
                 rospy.logerr("Serial error: %s", e)

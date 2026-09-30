@@ -6,12 +6,14 @@ import serial
 import socket
 import base64
 import time
+import math
 import threading
 import select
 import errno
 
 from std_msgs.msg import String, Float64
 from sensor_msgs.msg import NavSatFix, NavSatStatus
+from nav_msgs.msg import Odometry
 
 class NtripGnssNode(object):
     def __init__(self):
@@ -22,7 +24,7 @@ class NtripGnssNode(object):
         self.gnss_publisher = rospy.Publisher("handsfree/rtk/gnss", NavSatFix, queue_size=10)
         self.speed_publisher = rospy.Publisher("handsfree/rtk/speed", Float64, queue_size=10) # m/s
         self.cog_pub = rospy.Publisher("handsfree/rtk/cog", Float64, queue_size=10)       # deg (Course over ground)
-        self.heading_pub = rospy.Publisher("handsfree/rtk/heading", Float64, queue_size=10)  # deg (True heading)
+        self.heading_pub = rospy.Publisher("handsfree/rtk/heading", Odometry, queue_size=10)  # quaternion, header.stamp: GNSS UTC
         # ---- params ----
         self.port = rospy.get_param('~port', '/dev/HFRobotRTK')
         self.baudrate = int(rospy.get_param('~baudrate', 115200))
@@ -44,6 +46,7 @@ class NtripGnssNode(object):
         self.ntrip_sock = None
         self.latest_gga = None # 最近一条 GGA 原文
         self.have_gga = False
+        self.heading_utc_time = None
 
         # 退出/停机控制
         self.stop_evt = threading.Event()
@@ -378,6 +381,7 @@ class NtripGnssNode(object):
 
     def _publish_gngga_data(self, gga):
         try:
+            self.heading_utc_time = gga.get('time')
             fix_q = int(gga.get('fix_quality', 0))
             lat = gga.get('latitude', None)
             lon = gga.get('longitude', None)
@@ -435,7 +439,17 @@ class NtripGnssNode(object):
             if not valid or heading is None:
                 rospy.logdebug("THS skipped: invalid or empty.")
                 return  # 不发布
-            self.heading_pub.publish(Float64(data=heading))
+            if self.heading_utc_time is None:
+                return
+            msg = Odometry()
+            msg.header.stamp = self.heading_utc_time
+            msg.header.frame_id = self.frame_id
+            msg.child_frame_id = "heading"
+            heading_rad = heading * 3.141592653589793 / 180.0
+            msg.pose.pose.orientation.z = math.sin(heading_rad * 0.5)
+            msg.pose.pose.orientation.w = math.cos(heading_rad * 0.5)
+            self.heading_pub.publish(msg)
+            self.heading_utc_time = None
             rospy.loginfo("THS: heading=%.3f° (valid)", heading)
         except Exception as e:
             rospy.logwarn("Publish GNTHS failed (skipped): %s", e)

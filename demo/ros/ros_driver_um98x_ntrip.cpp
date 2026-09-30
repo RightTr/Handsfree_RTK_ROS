@@ -33,10 +33,12 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/nav_sat_fix.hpp>
 #include <sensor_msgs/msg/nav_sat_status.hpp>
+#include <nav_msgs/msg/odometry.hpp>
 #include <std_msgs/msg/float64.hpp>
 #include <std_msgs/msg/string.hpp>
 using MsgString = std_msgs::msg::String;
 using MsgFloat64 = std_msgs::msg::Float64;
+using MsgHeading = nav_msgs::msg::Odometry;
 using MsgNavSatFix = sensor_msgs::msg::NavSatFix;
 using MsgNavSatStatus = sensor_msgs::msg::NavSatStatus;
 using RosNodeBase = rclcpp::Node;
@@ -44,10 +46,12 @@ using RosNodeBase = rclcpp::Node;
 #include <ros/ros.h>
 #include <sensor_msgs/NavSatFix.h>
 #include <sensor_msgs/NavSatStatus.h>
+#include <nav_msgs/Odometry.h>
 #include <std_msgs/Float64.h>
 #include <std_msgs/String.h>
 using MsgString = std_msgs::String;
 using MsgFloat64 = std_msgs::Float64;
+using MsgHeading = nav_msgs::Odometry;
 using MsgNavSatFix = sensor_msgs::NavSatFix;
 using MsgNavSatStatus = sensor_msgs::NavSatStatus;
 #endif
@@ -414,13 +418,13 @@ private:
     gnss_pub_ = this->create_publisher<MsgNavSatFix>("handsfree/rtk/gnss", 10);
     speed_pub_ = this->create_publisher<MsgFloat64>("handsfree/rtk/speed", 10);
     cog_pub_ = this->create_publisher<MsgFloat64>("handsfree/rtk/cog", 10);
-    heading_pub_ = this->create_publisher<MsgFloat64>("handsfree/rtk/heading", 10);
+    heading_pub_ = this->create_publisher<MsgHeading>("handsfree/rtk/heading", 10);
 #else
     raw_pub_ = nh_.advertise<MsgString>("handsfree/rtk/raw", 10);
     gnss_pub_ = nh_.advertise<MsgNavSatFix>("handsfree/rtk/gnss", 10);
     speed_pub_ = nh_.advertise<MsgFloat64>("handsfree/rtk/speed", 10);
     cog_pub_ = nh_.advertise<MsgFloat64>("handsfree/rtk/cog", 10);
-    heading_pub_ = nh_.advertise<MsgFloat64>("handsfree/rtk/heading", 10);
+    heading_pub_ = nh_.advertise<MsgHeading>("handsfree/rtk/heading", 10);
 #endif
   }
 
@@ -544,17 +548,44 @@ private:
       speed_pub_->publish(msg);
     } else if (topic == "cog") {
       cog_pub_->publish(msg);
-    } else if (topic == "heading") {
-      heading_pub_->publish(msg);
     }
 #else
     if (topic == "speed") {
       speed_pub_.publish(msg);
     } else if (topic == "cog") {
       cog_pub_.publish(msg);
-    } else if (topic == "heading") {
-      heading_pub_.publish(msg);
     }
+#endif
+  }
+
+  void publish_heading(double heading_deg, const UtcTimeOfDay& utc_time) {
+    if (!utc_time.valid) {
+      return;
+    }
+    MsgHeading msg;
+    const UtcDate stamp_date = latest_utc_date_.valid ? latest_utc_date_ : current_utc_date();
+    const int64_t stamp_sec = utc_epoch_seconds(stamp_date, utc_time);
+#if defined(USE_ROS2)
+    msg.header.stamp.sec = static_cast<int32_t>(stamp_sec);
+    msg.header.stamp.nanosec = utc_time.nanosecond;
+    msg.header.frame_id = frame_id_;
+    msg.child_frame_id = "heading";
+    const double heading_rad = heading_deg * M_PI / 180.0;
+    msg.pose.pose.orientation.x = 0.0;
+    msg.pose.pose.orientation.y = 0.0;
+    msg.pose.pose.orientation.z = std::sin(heading_rad * 0.5);
+    msg.pose.pose.orientation.w = std::cos(heading_rad * 0.5);
+    heading_pub_->publish(msg);
+#else
+    msg.header.stamp = ros::Time(static_cast<uint32_t>(stamp_sec), utc_time.nanosecond);
+    msg.header.frame_id = frame_id_;
+    msg.child_frame_id = "heading";
+    const double heading_rad = heading_deg * M_PI / 180.0;
+    msg.pose.pose.orientation.x = 0.0;
+    msg.pose.pose.orientation.y = 0.0;
+    msg.pose.pose.orientation.z = std::sin(heading_rad * 0.5);
+    msg.pose.pose.orientation.w = std::cos(heading_rad * 0.5);
+    heading_pub_.publish(msg);
 #endif
   }
 
@@ -634,6 +665,10 @@ private:
         latest_gga_ = line;
         have_gga_ = true;
       }
+      if (gga.utc_time.valid) {
+        heading_utc_time_ = gga.utc_time;
+        heading_utc_time_valid_ = true;
+      }
       publish_navsat(gga.lat, gga.lon, gga.alt, gga.fix_quality, gga.utc_time);
       return;
     }
@@ -652,7 +687,11 @@ private:
 
     ThsData ths;
     if (parse_ths(line, ths) && ths.valid) {
-      publish_float("heading", ths.heading_deg);
+      if (!heading_utc_time_valid_) {
+        return;
+      }
+      publish_heading(ths.heading_deg, heading_utc_time_);
+      heading_utc_time_valid_ = false;
     }
   }
 
@@ -768,7 +807,7 @@ private:
   std::shared_ptr<rclcpp::Publisher<MsgNavSatFix>> gnss_pub_;
   std::shared_ptr<rclcpp::Publisher<MsgFloat64>> speed_pub_;
   std::shared_ptr<rclcpp::Publisher<MsgFloat64>> cog_pub_;
-  std::shared_ptr<rclcpp::Publisher<MsgFloat64>> heading_pub_;
+  std::shared_ptr<rclcpp::Publisher<MsgHeading>> heading_pub_;
 #else
   ros::NodeHandle nh_;
   ros::NodeHandle pnh_;
@@ -797,6 +836,8 @@ private:
   std::mutex mu_;
   std::string latest_gga_;
   UtcDate latest_utc_date_;
+  UtcTimeOfDay heading_utc_time_;
+  bool heading_utc_time_valid_ = false;
   bool have_gga_ = false;
   std::thread gga_thread_;
   std::thread rtcm_thread_;
