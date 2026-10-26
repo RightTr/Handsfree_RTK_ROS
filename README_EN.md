@@ -46,10 +46,10 @@ The RTK module driver parses the GNGGA, GNRMC data .
     `/dev/HFRobotRTK` (modifiable via `~port` parameter)  
 - **Published Topics**:  
   - `handsfree/rtk/raw` ([std_msgs/String](http://docs.ros.org/en/api/std_msgs/html/msg/String.html)) — Raw NMEA protocol data directly output from the GNSS receiver.  
-  - `handsfree/rtk/gnss` ([sensor_msgs/NavSatFix](http://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html)) — Parsed GNSS positioning data, including fix status, latitude, longitude, altitude, and covariance matrix.  
+  - `handsfree/rtk/gnss` ([sensor_msgs/NavSatFix](http://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html)) — GGA latitude and longitude, WGS84 ellipsoid altitude (MSL height plus geoid separation), fix status, and estimated covariance; no-fix GGA is published with `NO_FIX`.
   - `handsfree/rtk/speed` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html)) — Ground speed parsed from NMEA data, in **m/s**. 
   - `handsfree/rtk/cog` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html)) — Course Over Ground (COG), representing the **movement direction** relative to true north, measured clockwise (0° = North, 90° = East, 180° = South, 270° = West), in **degrees (°)**. 
-  - `handsfree/rtk/heading` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html)) — True Heading, representing the **device’s orientation** (typically the dual-antenna baseline direction), independent of movement direction, in **degrees (°)**. 
+  - `handsfree/rtk/heading` (`nav_msgs/Odometry`) — Published only for valid THS true heading. The orientation quaternion contains ROS ENU yaw (`90° - THS`), with `header.frame_id` defaulting to `map`. An antenna mounting offset is needed if the baseline is not aligned with vehicle forward.
 - **Launch Command**:  
     ```bash
     roslaunch handsfree_rtk handsfree_rtk.launch
@@ -68,10 +68,10 @@ NTRIP client driver to realize differential data transmission between base stati
     - Received from NTRIP server: RTCM3.x differential data stream  
 - **Published Topics**:  
   - `handsfree/rtk/raw` ([std_msgs/String](http://docs.ros.org/en/api/std_msgs/html/msg/String.html)) — Raw NMEA protocol data directly output from the GNSS receiver.  
-  - `handsfree/rtk/gnss` ([sensor_msgs/NavSatFix](http://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html)) — Parsed GNSS positioning data, including fix status, latitude, longitude, altitude, and covariance matrix.  
+  - `handsfree/rtk/gnss` ([sensor_msgs/NavSatFix](http://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html)) — GGA latitude and longitude, WGS84 ellipsoid altitude, fix status, and estimated covariance; no-fix GGA is published with `NO_FIX`.
   - `handsfree/rtk/speed` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html)) — Ground speed parsed from NMEA data, in **m/s**. 
   - `handsfree/rtk/cog` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html)) — Course Over Ground (COG), representing the **movement direction** relative to true north, measured clockwise (0° = North, 90° = East, 180° = South, 270° = West), in **degrees (°)**. 
-  - `handsfree/rtk/heading` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html)) — True Heading, representing the **device’s orientation** (typically the dual-antenna baseline direction), independent of movement direction, in **degrees (°)**. 
+  - `handsfree/rtk/heading` (`nav_msgs/Odometry`) — Published only for valid THS true heading, converted to a ROS ENU yaw quaternion (`90° - THS`). `header.frame_id` defaults to `map`.
 - **Launch Command**:  
     ```bash
     roslaunch handsfree_rtk handsfree_rtk_ntrip.launch

@@ -219,7 +219,7 @@ struct GgaData {
   double hdop = 99.9;
   double lat = std::numeric_limits<double>::quiet_NaN();
   double lon = std::numeric_limits<double>::quiet_NaN();
-  double alt = 0.0;
+  double alt = std::numeric_limits<double>::quiet_NaN();
 };
 
 struct RmcData {
@@ -251,10 +251,15 @@ static bool parse_gga(const std::string& line, GgaData& out) {
   out.fix_quality = to_int(fields[6], 0);
   out.num_sats = to_int(fields[7], 0);
   out.hdop = to_double(fields[8], 99.9);
-  out.alt = to_double(fields[9], 0.0);
+  // GGA height is above mean sea level; NavSatFix requires ellipsoid height.
+  const double msl_alt = to_double(fields[9], std::numeric_limits<double>::quiet_NaN());
+  const double geoid_sep = fields.size() > 11
+    ? to_double(fields[11], std::numeric_limits<double>::quiet_NaN())
+    : std::numeric_limits<double>::quiet_NaN();
+  out.alt = msl_alt + geoid_sep;
   out.lat = ddmm_to_deg(fields[2], fields[3], true);
   out.lon = ddmm_to_deg(fields[4], fields[5], false);
-  out.valid = std::isfinite(out.lat) && std::isfinite(out.lon);
+  out.valid = true;
   return true;
 }
 
@@ -339,6 +344,7 @@ public:
     this->declare_parameter<int>("baudrate", 115200);
     this->declare_parameter<double>("timeout", 1.0);
     this->declare_parameter<std::string>("frame_id", "gps");
+    this->declare_parameter<std::string>("heading_frame_id", "map");
     this->declare_parameter<std::string>("ntrip_server", "120.253.239.161");
     this->declare_parameter<int>("ntrip_port", 8002);
     this->declare_parameter<std::string>("ntrip_username", "ctea952");
@@ -350,6 +356,7 @@ public:
     baudrate_ = this->get_parameter("baudrate").as_int();
     timeout_sec_ = this->get_parameter("timeout").as_double();
     frame_id_ = this->get_parameter("frame_id").as_string();
+    heading_frame_id_ = this->get_parameter("heading_frame_id").as_string();
     ntrip_server_ = this->get_parameter("ntrip_server").as_string();
     ntrip_port_ = this->get_parameter("ntrip_port").as_int();
     ntrip_username_ = this->get_parameter("ntrip_username").as_string();
@@ -366,6 +373,7 @@ public:
     pnh_.param("baudrate", baudrate_, 115200);
     pnh_.param("timeout", timeout_sec_, 1.0);
     pnh_.param<std::string>("frame_id", frame_id_, "gps");
+    pnh_.param<std::string>("heading_frame_id", heading_frame_id_, "map");
     pnh_.param<std::string>("ntrip_server", ntrip_server_, "120.253.239.161");
     pnh_.param("ntrip_port", ntrip_port_, 8002);
     pnh_.param<std::string>("ntrip_username", ntrip_username_, "ctea952");
@@ -480,6 +488,7 @@ private:
       }
     } catch (...) {
     }
+    pending_line_.clear();
   }
 
   void safe_close_sock() {
@@ -513,11 +522,16 @@ private:
         }
       } else if (n == 1) {
         if (c == '\r' || c == '\n') {
-          if (!out.empty()) {
+          if (!pending_line_.empty()) {
+            out.swap(pending_line_);
+            pending_line_.clear();
             return true;
           }
         } else {
-          out.push_back(c);
+          pending_line_.push_back(c);
+          if (pending_line_.size() > 8192) {
+            pending_line_.clear();
+          }
         }
       }
 
@@ -569,9 +583,10 @@ private:
 #if defined(USE_ROS2)
     msg.header.stamp.sec = static_cast<int32_t>(stamp_sec);
     msg.header.stamp.nanosec = utc_time.nanosecond;
-    msg.header.frame_id = frame_id_;
+    msg.header.frame_id = heading_frame_id_;
     msg.child_frame_id = "heading";
-    const double heading_rad = heading_deg * M_PI / 180.0;
+    // NMEA true heading is clockwise from north; ROS ENU yaw is CCW from east.
+    const double heading_rad = (90.0 - heading_deg) * M_PI / 180.0;
     msg.pose.pose.orientation.x = 0.0;
     msg.pose.pose.orientation.y = 0.0;
     msg.pose.pose.orientation.z = std::sin(heading_rad * 0.5);
@@ -579,9 +594,9 @@ private:
     heading_pub_->publish(msg);
 #else
     msg.header.stamp = ros::Time(static_cast<uint32_t>(stamp_sec), utc_time.nanosecond);
-    msg.header.frame_id = frame_id_;
+    msg.header.frame_id = heading_frame_id_;
     msg.child_frame_id = "heading";
-    const double heading_rad = heading_deg * M_PI / 180.0;
+    const double heading_rad = (90.0 - heading_deg) * M_PI / 180.0;
     msg.pose.pose.orientation.x = 0.0;
     msg.pose.pose.orientation.y = 0.0;
     msg.pose.pose.orientation.z = std::sin(heading_rad * 0.5);
@@ -611,7 +626,8 @@ private:
     }
 #endif
     msg.header.frame_id = frame_id_;
-    msg.status.status = nav_status_from_fix(fix_q);
+    const bool has_fix = fix_q != 0 && std::isfinite(lat) && std::isfinite(lon);
+    msg.status.status = has_fix ? nav_status_from_fix(fix_q) : MsgNavSatStatus::STATUS_NO_FIX;
     msg.status.service = MsgNavSatStatus::SERVICE_GPS;
     msg.latitude = lat;
     msg.longitude = lon;
@@ -623,7 +639,7 @@ private:
     msg.position_covariance[0] = variance;
     msg.position_covariance[4] = variance;
     msg.position_covariance[8] = variance;
-    msg.position_covariance_type = MsgNavSatFix::COVARIANCE_TYPE_DIAGONAL_KNOWN;
+    msg.position_covariance_type = MsgNavSatFix::COVARIANCE_TYPE_APPROXIMATED;
 #if defined(USE_ROS2)
     gnss_pub_->publish(msg);
 #else
@@ -661,7 +677,7 @@ private:
 
     GgaData gga;
     if (parse_gga(line, gga) && gga.valid) {
-      {
+      if (gga.fix_quality != 0 && std::isfinite(gga.lat) && std::isfinite(gga.lon)) {
         std::lock_guard<std::mutex> lk(mu_);
         latest_gga_ = line;
         have_gga_ = true;
@@ -827,6 +843,8 @@ private:
   int baudrate_ = 115200;
   double timeout_sec_ = 1.0;
   std::string frame_id_ = "gps";
+  std::string heading_frame_id_ = "map";
+  std::string pending_line_;
   std::string ntrip_server_ = "120.253.239.161";
   int ntrip_port_ = 8002;
   std::string ntrip_username_ = "ctea952";

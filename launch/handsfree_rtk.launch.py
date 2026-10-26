@@ -9,12 +9,14 @@ def generate_launch_description():
     baudrate = LaunchConfiguration("baudrate")
     timeout = LaunchConfiguration("timeout")
     frame_id = LaunchConfiguration("frame_id")
+    heading_frame_id = LaunchConfiguration("heading_frame_id")
 
     return LaunchDescription([
         DeclareLaunchArgument("port", default_value="/dev/HFRobotRTK"),
         DeclareLaunchArgument("baudrate", default_value="115200"),
         DeclareLaunchArgument("timeout", default_value="0.1"),
         DeclareLaunchArgument("frame_id", default_value="gps"),
+        DeclareLaunchArgument("heading_frame_id", default_value="map"),
         Node(
             package="handsfree_rtk",
             executable="cpp_driver_um98x",
@@ -25,6 +27,7 @@ def generate_launch_description():
                 "baudrate": baudrate,
                 "timeout": timeout,
                 "frame_id": frame_id,
+                "heading_frame_id": heading_frame_id,
             }],
         ),
     ])

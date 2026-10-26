@@ -3,6 +3,7 @@
     <!-- GPS串口配置 -->
     <arg name="port" default="/dev/HFRobotRTK"/>
     <arg name="baudrate" default="115200"/>
+    <arg name="heading_frame_id" default="map"/>
 
     <!-- NTRIP服务器配置 -->
     <arg name="ntrip_server" default="120.253.239.161"/>
@@ -16,6 +17,7 @@
         <!-- GPS参数 -->
         <param name="port" value="$(arg port)" type="string"/>
         <param name="baudrate" value="$(arg baudrate)" type="int"/>
+        <param name="heading_frame_id" value="$(arg heading_frame_id)" type="string"/>
         
         <!-- NTRIP参数 -->
         <param name="ntrip_server" value="$(arg ntrip_server)" type="string"/>

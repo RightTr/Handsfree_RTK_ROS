@@ -2,9 +2,11 @@
 <launch>
     <arg name="port" default="/dev/HFRobotRTK"/>
     <arg name="baudrate" default="115200"/>
+    <arg name="heading_frame_id" default="map"/>
 
     <node name = "handsfree_rtk" pkg = "handsfree_rtk" type = "ros_driver_um98x.py" output="screen">
         <param name="port" value="$(arg port)" type="string"/>
         <param name="baudrate" value="115200" type="int"/>
+        <param name="heading_frame_id" value="$(arg heading_frame_id)" type="string"/>
     </node>
 </launch>

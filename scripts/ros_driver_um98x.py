@@ -63,6 +63,7 @@ class RTKTagDriver(object):
         self.port = rospy.get_param("~port", "/dev/HFRobotRTK")
         self.baudrate = rospy.get_param("~baudrate", 115200)
         self.timeout = rospy.get_param("~timeout", 0.1)
+        self.heading_frame_id = rospy.get_param("~heading_frame_id", "map")
 
         # 话题发布者
         self.raw_pub = rospy.Publisher("handsfree/rtk/raw", String, queue_size=10)
@@ -171,29 +172,30 @@ class RTKTagDriver(object):
                     num_sats = parsed.get('num_sats')
                     hdop = parsed.get('hdop')
 
-                    if lat is not None and lon is not None:
-                        status_str, status_value, cov_m = FIX_TYPE_MAPPING.get(
-                            fix_q, ("Unknown", NavSatStatus.STATUS_NO_FIX, 10000.0))
+                    status_str, status_value, cov_m = FIX_TYPE_MAPPING.get(
+                        fix_q, ("Unknown", NavSatStatus.STATUS_NO_FIX, 10000.0))
+                    if fix_q == 0 or lat is None or lon is None:
+                        status_value = NavSatStatus.STATUS_NO_FIX
 
-                        rospy.loginfo("GGA: fix=%d (%s), lat=%.8f lon=%.8f alt=%.3f", fix_q, status_str, lat, lon, alt)
+                    navsat = NavSatFix()
+                    navsat.header.stamp = parsed['time']
+                    navsat.header.frame_id = "gps"
+                    navsat.status.status = status_value
+                    navsat.status.service = NavSatStatus.SERVICE_GPS
+                    navsat.latitude = lat if lat is not None else float('nan')
+                    navsat.longitude = lon if lon is not None else float('nan')
+                    navsat.altitude = alt
 
-                        navsat = NavSatFix()
-                        navsat.header.stamp = parsed['time']
-                        navsat.header.frame_id = "gps"
-                        navsat.status.status = status_value
-                        navsat.status.service = NavSatStatus.SERVICE_GPS
-                        navsat.latitude = lat
-                        navsat.longitude = lon
-                        navsat.altitude = alt if alt is not None else 0.0
-
-                        var = (cov_m ** 2)  # 协方差对角（米→方差）
-                        navsat.position_covariance = [
-                            var, 0.0, 0.0,
-                            0.0, var, 0.0,
-                            0.0, 0.0, var
-                        ]
-                        navsat.position_covariance_type = NavSatFix.COVARIANCE_TYPE_DIAGONAL_KNOWN
-                        self.gnss_pub.publish(navsat)
+                    var = cov_m ** 2
+                    navsat.position_covariance = [
+                        var, 0.0, 0.0,
+                        0.0, var, 0.0,
+                        0.0, 0.0, var
+                    ]
+                    navsat.position_covariance_type = NavSatFix.COVARIANCE_TYPE_APPROXIMATED
+                    self.gnss_pub.publish(navsat)
+                    rospy.loginfo("GGA: fix=%d (%s), lat=%.8f lon=%.8f alt=%.3f",
+                                  fix_q, status_str, navsat.latitude, navsat.longitude, alt)
 
                 # 处理 RMC（地速/航向）
                 elif parsed['type'] == 'GNRMC':
@@ -216,9 +218,9 @@ class RTKTagDriver(object):
                         if valid and self.heading_utc_time is not None:
                             msg = Odometry()
                             msg.header.stamp = self.heading_utc_time
-                            msg.header.frame_id = "gps"
+                            msg.header.frame_id = self.heading_frame_id
                             msg.child_frame_id = "heading"
-                            heading_rad = heading * 3.141592653589793 / 180.0
+                            heading_rad = (90.0 - heading) * math.pi / 180.0
                             msg.pose.pose.orientation.z = math.sin(heading_rad * 0.5)
                             msg.pose.pose.orientation.w = math.cos(heading_rad * 0.5)
                             self.heading_pub.publish(msg)
@@ -257,7 +259,7 @@ class RTKTagDriver(object):
         """
         try:
             # ---------- GGA ----------
-            if sentence.startswith('$GNGGA'):
+            if sentence.startswith(('$GNGGA', '$GPGGA')):
                 parts = sentence.split(',')
                 if len(parts) < 10:
                     return None
@@ -271,9 +273,10 @@ class RTKTagDriver(object):
                 except Exception:
                     hdop = 99.9
                 try:
-                    alt = float(parts[9]) if parts[9] != '' else 0.0
-                except Exception:
-                    alt = 0.0
+                    # GGA MSL height + geoid separation = WGS84 ellipsoid height.
+                    alt = float(parts[9]) + float(parts[11])
+                except (ValueError, IndexError):
+                    alt = float('nan')
 
                 ros_time = RTKTagDriver._nmea_time_to_ros(time_utc)
                 return {

@@ -9,6 +9,7 @@ def generate_launch_description():
     baudrate = LaunchConfiguration("baudrate")
     timeout = LaunchConfiguration("timeout")
     frame_id = LaunchConfiguration("frame_id")
+    heading_frame_id = LaunchConfiguration("heading_frame_id")
     ntrip_server = LaunchConfiguration("ntrip_server")
     ntrip_port = LaunchConfiguration("ntrip_port")
     ntrip_username = LaunchConfiguration("ntrip_username")
@@ -21,6 +22,7 @@ def generate_launch_description():
         DeclareLaunchArgument("baudrate", default_value="115200"),
         DeclareLaunchArgument("timeout", default_value="1.0"),
         DeclareLaunchArgument("frame_id", default_value="gps"),
+        DeclareLaunchArgument("heading_frame_id", default_value="map"),
         DeclareLaunchArgument("ntrip_server", default_value="120.253.239.161"),
         DeclareLaunchArgument("ntrip_port", default_value="8002"),
         DeclareLaunchArgument("ntrip_username", default_value="ctea952"),
@@ -37,6 +39,7 @@ def generate_launch_description():
                 "baudrate": baudrate,
                 "timeout": timeout,
                 "frame_id": frame_id,
+                "heading_frame_id": heading_frame_id,
                 "ntrip_server": ntrip_server,
                 "ntrip_port": ntrip_port,
                 "ntrip_username": ntrip_username,

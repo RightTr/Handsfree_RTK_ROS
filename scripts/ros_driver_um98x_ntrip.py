@@ -29,6 +29,7 @@ class NtripGnssNode(object):
         self.port = rospy.get_param('~port', '/dev/HFRobotRTK')
         self.baudrate = int(rospy.get_param('~baudrate', 115200))
         self.frame_id = rospy.get_param('~frame_id', 'gps')
+        self.heading_frame_id = rospy.get_param('~heading_frame_id', 'map')
 
         self.ntrip_server = rospy.get_param('~ntrip_server', '120.253.239.161')
         self.ntrip_port = int(rospy.get_param('~ntrip_port', 8002))
@@ -387,25 +388,20 @@ class NtripGnssNode(object):
             lon = gga.get('longitude', None)
             alt = gga.get('altitude', None)
 
-            # 只有 fix!=0 且 三要素都存在才发布
-            if fix_q == 0 or lat is None or lon is None or alt is None:
-                rospy.logdebug("GGA skipped: no fix or missing fields (fix=%s).", fix_q)
-                return  # 不发布
-
             nav = NavSatFix()
             nav.header.stamp = rospy.Time.now()
             nav.header.frame_id = self.frame_id
-            nav.status.status = self._ros_status_from_gga(fix_q)
+            nav.status.status = self._ros_status_from_gga(fix_q) if fix_q != 0 and lat is not None and lon is not None else NavSatStatus.STATUS_NO_FIX
             nav.status.service = NavSatStatus.SERVICE_GPS
-            nav.latitude = float(lat)
-            nav.longitude = float(lon)
-            nav.altitude = float(alt)
+            nav.latitude = float(lat) if lat is not None else float('nan')
+            nav.longitude = float(lon) if lon is not None else float('nan')
+            nav.altitude = float(alt) if alt is not None else float('nan')
 
             cov = self.cov_by_flag.get(fix_q, 10000.0)
             nav.position_covariance = [cov, 0.0, 0.0,
                                     0.0, cov, 0.0,
                                     0.0, 0.0, cov]
-            nav.position_covariance_type = NavSatFix.COVARIANCE_TYPE_DIAGONAL_KNOWN
+            nav.position_covariance_type = NavSatFix.COVARIANCE_TYPE_APPROXIMATED
 
             self.gnss_publisher.publish(nav)
 
@@ -443,9 +439,9 @@ class NtripGnssNode(object):
                 return
             msg = Odometry()
             msg.header.stamp = self.heading_utc_time
-            msg.header.frame_id = self.frame_id
+            msg.header.frame_id = self.heading_frame_id
             msg.child_frame_id = "heading"
-            heading_rad = heading * 3.141592653589793 / 180.0
+            heading_rad = (90.0 - heading) * math.pi / 180.0
             msg.pose.pose.orientation.z = math.sin(heading_rad * 0.5)
             msg.pose.pose.orientation.w = math.cos(heading_rad * 0.5)
             self.heading_pub.publish(msg)
@@ -473,7 +469,9 @@ class NtripGnssNode(object):
                 fix_q = int(parts[6] or 0)
                 num_sats = int(parts[7] or 0)
                 hdop = self._to_float(parts[8], 99.9)
-                alt = self._to_float(parts[9], 0.0)
+                msl_alt = self._to_float(parts[9], float('nan'))
+                geoid_sep = self._to_float(parts[11], float('nan')) if len(parts) > 11 else float('nan')
+                alt = msl_alt + geoid_sep
                 desc = self.flag_desc.get(fix_q, "Unknown")
                 ros_time = self.nmea_time_to_ros(time_utc)
 

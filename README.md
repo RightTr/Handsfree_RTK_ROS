@@ -46,10 +46,10 @@ source install/setup.bash
    `/dev/HFRobotRTK`（可通过`~port`参数修改）  
 - **发布话题**:
   - `handsfree/rtk/raw` ([std_msgs/String](http://docs.ros.org/en/api/std_msgs/html/msg/String.html))，原始NMEA协议数据
-  - `handsfree/rtk/gnss` (`sensor_msgs/NavSatFix`)，解析后的 GNSS 定位数据；协方差为根据 `fix_quality` 生成的对角协方差
+  - `handsfree/rtk/gnss` (`sensor_msgs/NavSatFix`)，解析 GGA 的经纬度；高度为 GGA 海拔高度加大地水准面差（WGS84 椭球高），无定位时状态为 `NO_FIX`；协方差为根据 `fix_quality` 估算的对角协方差
   - `handsfree/rtk/speed` (`std_msgs/Float64`)，速度，单位 m/s
   - `handsfree/rtk/cog` (`std_msgs/Float64`)，地面航向，单位 °
-  - `handsfree/rtk/heading` (`nav_msgs/Odometry`)，双天线航向用 `pose.pose.orientation` 四元数表示，`header.stamp` 使用对应 GGA 的 GNSS UTC 时间
+  - `handsfree/rtk/heading` (`nav_msgs/Odometry`)，只在 THS 状态 `A` 且有角度时发布；双天线真航向转换为 ROS ENU yaw（`yaw = 90° - THS`）后写入 `pose.pose.orientation`；`header.frame_id` 默认为 `map`，`header.stamp` 使用最近 GGA 的 GNSS UTC 时间。若天线基线与车体前向不一致，还需按安装方向补偿固定偏角
 - **启动命令**：  
 
    ```bash
@@ -70,10 +70,10 @@ source install/setup.bash
   - 从NTRIP服务器接收：RTCM3.x差分数据流  
 - **发布话题**:
   - `handsfree/rtk/raw` ([std_msgs/String](http://docs.ros.org/en/api/std_msgs/html/msg/String.html))，原始NMEA协议数据
-  - `handsfree/rtk/gnss` (`sensor_msgs/NavSatFix`)，解析后的 GNSS 定位数据；协方差为根据 `fix_quality` 生成的对角协方差
+  - `handsfree/rtk/gnss` (`sensor_msgs/NavSatFix`)，解析 GGA 的经纬度与 WGS84 椭球高；无定位时状态为 `NO_FIX`；协方差为根据 `fix_quality` 估算的对角协方差
   - `handsfree/rtk/speed` (`std_msgs/Float64`)，速度，单位 m/s
   - `handsfree/rtk/cog` (`std_msgs/Float64`)，地面航向，单位 °
-  - `handsfree/rtk/heading` (`nav_msgs/Odometry`)，双天线航向用 `pose.pose.orientation` 四元数表示，`header.stamp` 使用对应 GGA 的 GNSS UTC 时间
+  - `handsfree/rtk/heading` (`nav_msgs/Odometry`)，仅从有效 THS 发布双天线航向，转换为 ROS ENU yaw 后用 `pose.pose.orientation` 表示；`header.frame_id` 默认为 `map`，`header.stamp` 使用最近 GGA 的 GNSS UTC 时间
 - **启动命令**：  
    ```bash
    ros2 launch handsfree_rtk handsfree_rtk_ntrip.launch.py
