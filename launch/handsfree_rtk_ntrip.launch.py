@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
@@ -5,11 +7,12 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    default_raw_log_dir = str(Path(__file__).resolve().parents[1] / "logs")
     port = LaunchConfiguration("port")
     baudrate = LaunchConfiguration("baudrate")
-    timeout = LaunchConfiguration("timeout")
     frame_id = LaunchConfiguration("frame_id")
     heading_frame_id = LaunchConfiguration("heading_frame_id")
+    raw_log_dir = LaunchConfiguration("raw_log_dir")
     ntrip_server = LaunchConfiguration("ntrip_server")
     ntrip_port = LaunchConfiguration("ntrip_port")
     ntrip_username = LaunchConfiguration("ntrip_username")
@@ -20,9 +23,9 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("port", default_value="/dev/HFRobotRTK"),
         DeclareLaunchArgument("baudrate", default_value="115200"),
-        DeclareLaunchArgument("timeout", default_value="1.0"),
         DeclareLaunchArgument("frame_id", default_value="gps"),
         DeclareLaunchArgument("heading_frame_id", default_value="map"),
+        DeclareLaunchArgument("raw_log_dir", default_value=default_raw_log_dir),
         DeclareLaunchArgument("ntrip_server", default_value="120.253.239.161"),
         DeclareLaunchArgument("ntrip_port", default_value="8002"),
         DeclareLaunchArgument("ntrip_username", default_value="ctea952"),
@@ -37,9 +40,9 @@ def generate_launch_description():
             parameters=[{
                 "port": port,
                 "baudrate": baudrate,
-                "timeout": timeout,
                 "frame_id": frame_id,
                 "heading_frame_id": heading_frame_id,
+                "raw_log_dir": raw_log_dir,
                 "ntrip_server": ntrip_server,
                 "ntrip_port": ntrip_port,
                 "ntrip_username": ntrip_username,

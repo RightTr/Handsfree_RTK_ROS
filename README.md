@@ -41,20 +41,21 @@ source install/setup.bash
 ### 2.1 handsfree_rtk.launch  
 
 - **功能**：  
-   RTK模块驱动程序，解析GNGGA、GNRMC数据。  
+   C++ 驱动逐字节保存串口输入，解析 GGA 位置和 UNIHEADINGA 双天线航向。
 - **串口名称**：
    `/dev/HFRobotRTK`（可通过`~port`参数修改）  
 - **发布话题**:
-  - `handsfree/rtk/raw` ([std_msgs/String](http://docs.ros.org/en/api/std_msgs/html/msg/String.html))，原始NMEA协议数据
-  - `handsfree/rtk/gnss` (`sensor_msgs/NavSatFix`)，解析 GGA 的经纬度；高度为 GGA 海拔高度加大地水准面差（WGS84 椭球高），无定位时状态为 `NO_FIX`；协方差为根据 `fix_quality` 估算的对角协方差
-  - `handsfree/rtk/speed` (`std_msgs/Float64`)，速度，单位 m/s
-  - `handsfree/rtk/cog` (`std_msgs/Float64`)，地面航向，单位 °
-  - `handsfree/rtk/heading` (`nav_msgs/Odometry`)，只在 THS 状态 `A` 且有角度时发布；双天线真航向转换为 ROS ENU yaw（`yaw = 90° - THS`）后写入 `pose.pose.orientation`；`header.frame_id` 默认为 `map`，`header.stamp` 使用最近 GGA 的 GNSS UTC 时间。若天线基线与车体前向不一致，还需按安装方向补偿固定偏角
+  - `handsfree/rtk/raw` (`std_msgs/String`)，每条完整串口原句；磁盘 `.txt` 文件逐字节保留所有输入（包括 CR/LF），作为完整记录
+  - `handsfree/rtk/gnss` (`sensor_msgs/NavSatFix`)，每条 GGA 都发布；时间戳为报文 UTC，无定位时 `NO_FIX`、坐标为 NaN；有效时高度为 WGS84 椭球高
+  - `handsfree/rtk/heading_valid` (`std_msgs/Bool`)，每条校验通过的 UNIHEADINGA 都发布解算有效性
+  - `handsfree/rtk/heading` (`nav_msgs/Odometry`)，仅 UNIHEADINGA 解算有效时发布双天线航向；GPS 周/毫秒和报文闰秒换算为 UTC，四元数为 ROS ENU yaw（`90° − 真航向`）
 - **启动命令**：  
 
    ```bash
    ros2 launch handsfree_rtk handsfree_rtk.launch.py
    ```
+
+原始文件默认写入仓库（或安装包）中的 `logs/` 目录，可通过 `raw_log_dir:=/path/to/dir` 修改。磁盘写入失败时驱动报错停机。文件记录串口接收字节；ROS 订阅方持续跟不上时，以文件为准。GNSS 和 heading 时间戳均为 UTC；若雷达使用 GPS 时间基准，需要在雷达侧统一时间基准后再做同步。
 
 ### 2.2 handsfree_rtk_ntrip.launch  
 
@@ -65,15 +66,10 @@ source install/setup.bash
 - **串口名称**：  
    `/dev/HFRobotRTK`（可通过`~port`参数修改）
 - **接收/发送**：  
-  - 向串口发送：`GPGGA 1`指令（触发移动站输出GGA数据）  
   - 向NTRIP服务器发送：移动站的GGA观测数据  
   - 从NTRIP服务器接收：RTCM3.x差分数据流  
 - **发布话题**:
-  - `handsfree/rtk/raw` ([std_msgs/String](http://docs.ros.org/en/api/std_msgs/html/msg/String.html))，原始NMEA协议数据
-  - `handsfree/rtk/gnss` (`sensor_msgs/NavSatFix`)，解析 GGA 的经纬度与 WGS84 椭球高；无定位时状态为 `NO_FIX`；协方差为根据 `fix_quality` 估算的对角协方差
-  - `handsfree/rtk/speed` (`std_msgs/Float64`)，速度，单位 m/s
-  - `handsfree/rtk/cog` (`std_msgs/Float64`)，地面航向，单位 °
-  - `handsfree/rtk/heading` (`nav_msgs/Odometry`)，仅从有效 THS 发布双天线航向，转换为 ROS ENU yaw 后用 `pose.pose.orientation` 表示；`header.frame_id` 默认为 `map`，`header.stamp` 使用最近 GGA 的 GNSS UTC 时间
+  - 与普通启动方式相同：`raw`、`gnss`、`heading_valid`、`heading`；原始字节也写入磁盘文件
 - **启动命令**：  
    ```bash
    ros2 launch handsfree_rtk handsfree_rtk_ntrip.launch.py

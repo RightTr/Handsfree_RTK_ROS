@@ -4,6 +4,7 @@
     <arg name="port" default="/dev/HFRobotRTK"/>
     <arg name="baudrate" default="115200"/>
     <arg name="heading_frame_id" default="map"/>
+    <arg name="raw_log_dir" default="$(find handsfree_rtk)/logs"/>
 
     <!-- NTRIP服务器配置 -->
     <arg name="ntrip_server" default="120.253.239.161"/>
@@ -13,11 +14,12 @@
     <arg name="ntrip_mountpoint" default="RTCM33_GRCE"/>
 
     <!-- 启动NTRIP节点 -->
-    <node name="handsfree_rtk_ntrip" pkg="handsfree_rtk" type="ros_driver_um98x_ntrip.py" output="screen">
+    <node name="handsfree_rtk_ntrip" pkg="handsfree_rtk" type="cpp_driver_um98x_ntrip" output="screen">
         <!-- GPS参数 -->
         <param name="port" value="$(arg port)" type="string"/>
         <param name="baudrate" value="$(arg baudrate)" type="int"/>
         <param name="heading_frame_id" value="$(arg heading_frame_id)" type="string"/>
+        <param name="raw_log_dir" value="$(arg raw_log_dir)" type="string"/>
         
         <!-- NTRIP参数 -->
         <param name="ntrip_server" value="$(arg ntrip_server)" type="string"/>

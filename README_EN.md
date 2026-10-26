@@ -41,15 +41,14 @@ echo "source ~/catkin_ws/devel/setup.bash" >> ~/.bashrc
 ### 2.1 handsfree_rtk.launch  
 
 - **Features**:  
-The RTK module driver parses the GNGGA, GNRMC data .  
+The C++ driver records serial bytes and parses GGA positions and UNIHEADINGA dual-antenna headings.
 - **Serial port name**:  
     `/dev/HFRobotRTK` (modifiable via `~port` parameter)  
 - **Published Topics**:  
-  - `handsfree/rtk/raw` ([std_msgs/String](http://docs.ros.org/en/api/std_msgs/html/msg/String.html)) — Raw NMEA protocol data directly output from the GNSS receiver.  
-  - `handsfree/rtk/gnss` ([sensor_msgs/NavSatFix](http://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html)) — GGA latitude and longitude, WGS84 ellipsoid altitude (MSL height plus geoid separation), fix status, and estimated covariance; no-fix GGA is published with `NO_FIX`.
-  - `handsfree/rtk/speed` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html)) — Ground speed parsed from NMEA data, in **m/s**. 
-  - `handsfree/rtk/cog` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html)) — Course Over Ground (COG), representing the **movement direction** relative to true north, measured clockwise (0° = North, 90° = East, 180° = South, 270° = West), in **degrees (°)**. 
-  - `handsfree/rtk/heading` (`nav_msgs/Odometry`) — Published only for valid THS true heading. The orientation quaternion contains ROS ENU yaw (`90° - THS`), with `header.frame_id` defaulting to `map`. An antenna mounting offset is needed if the baseline is not aligned with vehicle forward.
+  - `handsfree/rtk/raw` (`std_msgs/String`) — Each complete serial line; the `.txt` raw log preserves every received byte including line endings.
+  - `handsfree/rtk/gnss` (`sensor_msgs/NavSatFix`) — Every GGA epoch, stamped with receiver UTC; invalid fixes use `NO_FIX` and NaN coordinates.
+  - `handsfree/rtk/heading_valid` (`std_msgs/Bool`) — Solution validity for every valid UNIHEADINGA record.
+  - `handsfree/rtk/heading` (`nav_msgs/Odometry`) — Dual-antenna heading from valid UNIHEADINGA records, stamped in UTC and converted to ROS ENU yaw (`90° - true heading`).
 - **Launch Command**:  
     ```bash
     roslaunch handsfree_rtk handsfree_rtk.launch
@@ -63,15 +62,10 @@ NTRIP client driver to realize differential data transmission between base stati
 - **Serial port name**:  
     `/dev/HFRobotRTK` (modifiable via `~port` parameter)  
 - **Receiving/Sending**:  
-    - Send `GPGGA 1` command to the serial port (trigger the mobile station to output GGA data)  
-    - Send GGA observations to the NTRIP server  
+    - Send valid GGA observations to the NTRIP server
     - Received from NTRIP server: RTCM3.x differential data stream  
 - **Published Topics**:  
-  - `handsfree/rtk/raw` ([std_msgs/String](http://docs.ros.org/en/api/std_msgs/html/msg/String.html)) — Raw NMEA protocol data directly output from the GNSS receiver.  
-  - `handsfree/rtk/gnss` ([sensor_msgs/NavSatFix](http://docs.ros.org/en/api/sensor_msgs/html/msg/NavSatFix.html)) — GGA latitude and longitude, WGS84 ellipsoid altitude, fix status, and estimated covariance; no-fix GGA is published with `NO_FIX`.
-  - `handsfree/rtk/speed` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html)) — Ground speed parsed from NMEA data, in **m/s**. 
-  - `handsfree/rtk/cog` ([std_msgs/Float64](http://docs.ros.org/en/noetic/api/std_msgs/html/msg/Float64.html)) — Course Over Ground (COG), representing the **movement direction** relative to true north, measured clockwise (0° = North, 90° = East, 180° = South, 270° = West), in **degrees (°)**. 
-  - `handsfree/rtk/heading` (`nav_msgs/Odometry`) — Published only for valid THS true heading, converted to a ROS ENU yaw quaternion (`90° - THS`). `header.frame_id` defaults to `map`.
+  - Same topics as the serial driver: `raw`, `gnss`, `heading_valid`, and `heading`; raw bytes are also logged to disk.
 - **Launch Command**:  
     ```bash
     roslaunch handsfree_rtk handsfree_rtk_ntrip.launch

@@ -45,7 +45,7 @@ endif()
 
 function(configure_cpp_demo target source_file)
   add_executable(${target} ${source_file})
-  target_compile_features(${target} PRIVATE cxx_std_11)
+  target_compile_features(${target} PRIVATE cxx_std_17)
   target_link_libraries(${target} Boost::system Threads::Threads)
 
   if(USE_ROS1)
