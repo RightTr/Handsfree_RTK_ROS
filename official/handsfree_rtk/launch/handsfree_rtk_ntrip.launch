@@ -1,0 +1,28 @@
+<!--  -->
+<launch>
+    <!-- GPS串口配置 -->
+    <arg name="port" default="/dev/HFRobotRTK"/>
+    <arg name="baudrate" default="115200"/>
+
+    <!-- NTRIP服务器配置 -->
+    <arg name="ntrip_server" default="120.253.239.161"/>
+    <arg name="ntrip_port" default="8002"/>
+    <arg name="ntrip_username" default="ctea952"/>
+    <arg name="ntrip_password" default="cm286070"/>
+    <arg name="ntrip_mountpoint" default="RTCM33_GRCE"/>
+
+    <!-- 启动NTRIP节点 -->
+    <node name="handsfree_rtk_ntrip" pkg="handsfree_rtk" type="ros_driver_um98x_ntrip.py" output="screen">
+        <!-- GPS参数 -->
+        <param name="port" value="$(arg port)" type="string"/>
+        <param name="baudrate" value="$(arg baudrate)" type="int"/>
+        
+        <!-- NTRIP参数 -->
+        <param name="ntrip_server" value="$(arg ntrip_server)" type="string"/>
+        <param name="ntrip_port" value="$(arg ntrip_port)" type="int"/>
+        <param name="ntrip_username" value="$(arg ntrip_username)" type="string"/>
+        <param name="ntrip_password" value="$(arg ntrip_password)" type="string"/>
+        <param name="ntrip_mountpoint" value="$(arg ntrip_mountpoint)" type="string"/>
+
+    </node>
+</launch>
