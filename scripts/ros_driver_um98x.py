@@ -153,7 +153,8 @@ class RTKTagDriver(object):
                 # 日志打印关键 NMEA 句子
                 if line.startswith('$GNGGA') or line.startswith('$GPGGA')\
                     or line.startswith('$GNRMC') or line.startswith('$GPRMC')\
-                    or line.startswith('$GNTHS') or line.startswith('$GPTHS'):
+                    or line.startswith('$GNTHS') or line.startswith('$GPTHS')\
+                    or line.startswith('$GBTHS'):
                     rospy.loginfo("%s", line)
 
                 parsed = self._parse_nmea_sentence(line)
@@ -324,7 +325,7 @@ class RTKTagDriver(object):
                 }
 
             # ---------- THS ----------
-            if sentence.startswith('$GNTHS') or sentence.startswith('GPTHS'):
+            if sentence.startswith(('$GNTHS', '$GPTHS', '$GBTHS')):
                 # 格式: $GNTHS,230.1081,A*10
                 parts = sentence.split(',')
                 if len(parts) < 3:

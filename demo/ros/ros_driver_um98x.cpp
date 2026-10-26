@@ -279,7 +279,8 @@ static bool parse_rmc(const std::string& line, RmcData& out) {
 }
 
 static bool parse_ths(const std::string& line, ThsData& out) {
-  if (!(line.rfind("$GNTHS", 0) == 0 || line.rfind("$GPTHS", 0) == 0)) {
+  if (!(line.rfind("$GNTHS", 0) == 0 || line.rfind("$GPTHS", 0) == 0 ||
+        line.rfind("$GBTHS", 0) == 0)) {
     return false;
   }
   if (!checksum_ok(line)) {
@@ -289,8 +290,8 @@ static bool parse_ths(const std::string& line, ThsData& out) {
   if (fields.size() < 3) {
     return false;
   }
-  out.heading_deg = to_double(fields[1], 0.0);
-  out.valid = !fields[2].empty() && fields[2][0] == 'A';
+  out.heading_deg = to_double(fields[1], std::numeric_limits<double>::quiet_NaN());
+  out.valid = std::isfinite(out.heading_deg) && !fields[2].empty() && fields[2][0] == 'A';
   return true;
 }
 

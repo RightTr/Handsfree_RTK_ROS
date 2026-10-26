@@ -517,7 +517,7 @@ class NtripGnssNode(object):
                 }
 
             # ---------- THS ----------
-            if sentence.startswith('$GNTHS') or sentence.startswith('$GPTHS'):
+            if sentence.startswith(('$GNTHS', '$GPTHS', '$GBTHS')):
                 # 格式: $GNTHS,230.1081,A*10
                 rospy.loginfo(sentence)
                 parts = sentence.split(',')
