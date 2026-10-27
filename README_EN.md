@@ -46,7 +46,7 @@ The C++ driver records serial bytes and parses GGA positions and UNIHEADINGA dua
     `/dev/HFRobotRTK` (modifiable via `~port` parameter)  
 - **Published Topics**:  
   - `handsfree/rtk/raw` (`std_msgs/String`) — Each complete serial line; the `.txt` raw log preserves every received byte including line endings.
-  - `handsfree/rtk/gnss` (`sensor_msgs/NavSatFix`) — Every GGA epoch, stamped with receiver UTC; invalid fixes use `NO_FIX` and NaN coordinates.
+  - `handsfree/rtk/gnss` (`sensor_msgs/NavSatFix`) — Once three consecutive valid RMC records with increasing times at most 10 seconds apart, or a valid ZDA or UNIHEADINGA record, supplies the receiver date, every GGA is published immediately with its own UTC time of day. Earlier GGA fixes are dropped rather than queued; invalid fixes use `NO_FIX` and NaN coordinates.
   - `handsfree/rtk/heading_valid` (`std_msgs/Bool`) — Solution validity for every valid UNIHEADINGA record.
   - `handsfree/rtk/heading` (`nav_msgs/Odometry`) — Dual-antenna heading from valid UNIHEADINGA records, stamped in UTC and converted to ROS ENU yaw (`90° - true heading`).
 - **Launch Command**:  

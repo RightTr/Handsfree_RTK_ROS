@@ -102,6 +102,13 @@ inline int64_t days_from_civil(int y, unsigned m, unsigned d) {
   return era * 146097LL + static_cast<int64_t>(yoe) * 365 + yoe / 4 - yoe / 100 + doy - 719468;
 }
 
+inline bool valid_civil_date(int y, int m, int d) {
+  if (m < 1 || m > 12 || d < 1) return false;
+  const bool leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+  const int days[] = {31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+  return d <= days[m - 1];
+}
+
 inline bool time_of_day(const std::string& s, int64_t& whole, uint32_t& nanosecond) {
   if (s.size() < 6) return false;
   int64_t h, m;
@@ -149,6 +156,12 @@ public:
   void set_valid_gga_callback(std::function<void(const std::string&)> cb) { on_valid_gga_ = std::move(cb); }
 
   void process(const std::string& line) {
+    if (line.rfind("#UNIHEADINGA,", 0) == 0) process_uniheading(line);
+    else if (nmea_checksum_ok(line)) {
+      if (line.rfind("$GNGGA,", 0) == 0 || line.rfind("$GPGGA,", 0) == 0) process_gga(line);
+      else if (line.rfind("$GNRMC,", 0) == 0 || line.rfind("$GPRMC,", 0) == 0) process_rmc(line);
+      else if (line.rfind("$GNZDA,", 0) == 0 || line.rfind("$GPZDA,", 0) == 0) process_zda(line);
+    } else if (line.rfind("$GNRMC,", 0) == 0 || line.rfind("$GPRMC,", 0) == 0) rmc_streak_ = 0;
     RtkString raw;
     raw.data = line;
 #if defined(USE_ROS2)
@@ -156,11 +169,6 @@ public:
 #else
     raw1_.publish(raw);
 #endif
-    if (line.rfind("#UNIHEADINGA,", 0) == 0) { process_uniheading(line); return; }
-    if (!nmea_checksum_ok(line)) return;
-    if (line.rfind("$GNGGA,", 0) == 0 || line.rfind("$GPGGA,", 0) == 0) process_gga(line);
-    else if (line.rfind("$GNRMC,", 0) == 0 || line.rfind("$GPRMC,", 0) == 0) process_rmc(line);
-    else if (line.rfind("$GNZDA,", 0) == 0 || line.rfind("$GPZDA,", 0) == 0) process_zda(line);
   }
 
 private:
@@ -183,13 +191,18 @@ private:
 
   void process_rmc(const std::string& line) {
     const auto f = fields(line);
-    if (f.size() < 10 || f[9].size() != 6) return;
+    if (f.size() < 10 || f[9].size() != 6 || f[2] != "A") { rmc_streak_ = 0; return; }
     int64_t d, m, y, tod; uint32_t ns;
     if (!integer(f[9].substr(0, 2), d) || !integer(f[9].substr(2, 2), m) ||
         !integer(f[9].substr(4, 2), y) || !time_of_day(f[1], tod, ns) ||
-        d < 1 || d > 31 || m < 1 || m > 12) return;
-    reference_utc_ = days_from_civil(y >= 80 ? 1900 + y : 2000 + y, m, d) * 86400 + tod;
-    flush_pending_gga();
+        !valid_civil_date(y >= 80 ? 1900 + y : 2000 + y, m, d)) { rmc_streak_ = 0; return; }
+    const int64_t utc_sec = days_from_civil(y >= 80 ? 1900 + y : 2000 + y, m, d) * 86400 + tod;
+    const int64_t stamp_ns = utc_sec * 1000000000LL + ns;
+    if (rmc_streak_ > 0 && stamp_ns > last_rmc_ns_ && stamp_ns - last_rmc_ns_ <= 10000000000LL)
+      rmc_streak_ = std::min(rmc_streak_ + 1, 3);
+    else rmc_streak_ = 1;
+    last_rmc_ns_ = stamp_ns;
+    if (rmc_streak_ == 3) reference_utc_ = utc_sec;
   }
 
   void process_zda(const std::string& line) {
@@ -197,17 +210,8 @@ private:
     if (f.size() < 5) return;
     int64_t d, m, y, tod; uint32_t ns;
     if (!integer(f[2], d) || !integer(f[3], m) || !integer(f[4], y) ||
-        !time_of_day(f[1], tod, ns) || d < 1 || d > 31 || m < 1 || m > 12) return;
+        !time_of_day(f[1], tod, ns) || !valid_civil_date(y, m, d)) return;
     reference_utc_ = days_from_civil(y, m, d) * 86400 + tod;
-    flush_pending_gga();
-  }
-
-  void flush_pending_gga() {
-    while (!pending_gga_.empty()) {
-      std::string line = std::move(pending_gga_.front());
-      pending_gga_.pop_front();
-      process_gga(line);
-    }
   }
 
   int64_t closest_utc_day(int64_t tod) const {
@@ -224,23 +228,21 @@ private:
     const auto f = fields(line);
     int64_t tod, quality = 0; uint32_t ns;
     if (f.size() < 10 || !time_of_day(f[1], tod, ns) || !integer(f[6], quality)) return;
-    if (reference_utc_ == 0) {
-      if (!missing_date_reported_) { std::cerr << "GGA UTC date unavailable; raw bytes remain recorded\n"; missing_date_reported_ = true; }
-      if (pending_gga_.size() < 1024) pending_gga_.push_back(line);
-      else if (!pending_overflow_reported_) {
-        std::cerr << "GGA waiting for receiver UTC date exceeded 1024 messages\n";
-        pending_overflow_reported_ = true;
-      }
-      return;
-    }
     const double nan = std::numeric_limits<double>::quiet_NaN();
     double lat = nan, lon = nan, msl = nan, geoid = nan;
     const bool coords = coordinate(f[2], f[3], true, lat) && coordinate(f[4], f[5], false, lon);
     const bool good = quality > 0 && coords;
     if (!good) { lat = nan; lon = nan; }
+    if (reference_utc_ == 0) {
+      // Keep feeding NTRIP, but do not publish an undated GNSS fix.
+      if (good && on_valid_gga_) on_valid_gga_(line);
+      return;
+    }
     if (f.size() > 11) { number(f[9], msl); number(f[11], geoid); }
     RtkFix msg;
-    set_stamp(msg, closest_utc_day(tod), ns);
+    const int64_t utc_sec = closest_utc_day(tod);
+    if (utc_sec > reference_utc_) reference_utc_ = utc_sec;
+    set_stamp(msg, utc_sec, ns);
     msg.header.frame_id = fix_frame_;
     msg.status.status = !good ? RtkStatus::STATUS_NO_FIX :
       (quality == 4 || quality == 5 ? RtkStatus::STATUS_GBAS_FIX :
@@ -263,7 +265,7 @@ private:
   void process_uniheading(const std::string& line) {
     const auto semi = line.find(';');
     const auto star = line.find('*');
-    if (semi == std::string::npos || star == std::string::npos || star + 8 >= line.size()) return;
+    if (semi == std::string::npos || star == std::string::npos || star <= semi || star + 8 >= line.size()) return;
     uint32_t crc = 0;
     for (std::size_t i = 1; i < star; ++i) {
       crc ^= static_cast<unsigned char>(line[i]);
@@ -276,7 +278,7 @@ private:
     } catch (...) { return; }
     if (crc != received) return;
     const auto h = fields(line.substr(0, semi));
-    const auto b = fields(line.substr(semi + 1));
+    const auto b = fields(line.substr(semi + 1, star - semi - 1));
     if (h.size() < 9 || b.size() < 4) return;
     int64_t week, tow_ms, leap;
     if (!integer(h[4], week) || !integer(h[5], tow_ms) || !integer(h[8], leap) ||
@@ -284,7 +286,6 @@ private:
     const int64_t utc_sec = 315964800LL + week * 604800LL + tow_ms / 1000 - leap;
     const uint32_t ns = static_cast<uint32_t>(tow_ms % 1000) * 1000000U;
     reference_utc_ = utc_sec;
-    flush_pending_gga();
     double angle;
     const bool valid = b[0] == "SOL_COMPUTED" && number(b[3], angle) && angle >= 0 && angle <= 360;
     RtkBool status;
@@ -311,9 +312,8 @@ private:
 
   std::string fix_frame_, heading_frame_;
   int64_t reference_utc_ = 0;
-  bool missing_date_reported_ = false;
-  bool pending_overflow_reported_ = false;
-  std::deque<std::string> pending_gga_;
+  int64_t last_rmc_ns_ = 0;
+  int rmc_streak_ = 0;
   std::function<void(const std::string&)> on_valid_gga_;
 #if defined(USE_ROS2)
   rclcpp::Publisher<RtkString>::SharedPtr raw2_;
